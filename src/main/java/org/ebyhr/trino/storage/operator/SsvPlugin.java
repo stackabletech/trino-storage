@@ -36,7 +36,6 @@ public class SsvPlugin
     @Override
     public List<StorageColumnHandle> getFields(String path, Function<String, InputStream> streamProvider)
     {
-        // System.err.println("AAAAA " + path);
         Splitter splitter = Splitter.on(DELIMITER).trimResults();
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(streamProvider.apply(path)))) {
