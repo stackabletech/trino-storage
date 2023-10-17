@@ -83,7 +83,7 @@ public class StorageMetadata
     public ConnectorTableMetadata getTableMetadata(ConnectorSession session, ConnectorTableHandle table)
     {
         StorageTableHandle storageTableHandle = (StorageTableHandle) table;
-        SchemaTablePair tableName = new SchemaTablePair(storageTableHandle.getSchemaName(), storageTableHandle.getTableName());
+        CaseSensitiveSchemaTableName tableName = new CaseSensitiveSchemaTableName(storageTableHandle.getSchemaName(), storageTableHandle.getTableName());
 
         return getStorageTableMetadata(session, tableName);
     }
@@ -119,7 +119,7 @@ public class StorageMetadata
     {
         requireNonNull(prefix, "prefix is null");
         ImmutableMap.Builder<SchemaTableName, List<ColumnMetadata>> columns = ImmutableMap.builder();
-        for (SchemaTablePair tableName : listTables(session, prefix).toList()) {
+        for (CaseSensitiveSchemaTableName tableName : listTables(session, prefix).toList()) {
             ConnectorTableMetadata tableMetadata = getStorageTableMetadata(session, tableName);
             // table can disappear during listing operation
             if (tableMetadata != null) {
@@ -141,7 +141,7 @@ public class StorageMetadata
                 .iterator();
     }
 
-    private ConnectorTableMetadata getStorageTableMetadata(ConnectorSession session, SchemaTablePair tableName)
+    private ConnectorTableMetadata getStorageTableMetadata(ConnectorSession session, CaseSensitiveSchemaTableName tableName)
     {
         if (tableName.schemaName().equals(LIST_SCHEMA_NAME)) {
             return new ConnectorTableMetadata(tableName.toSchemaTableName(), COLUMNS_METADATA);
@@ -162,7 +162,7 @@ public class StorageMetadata
     /**
      * Simplified variant of {@link SchemaTableName} that doesn't case-fold.
      */
-    private static record SchemaTablePair(String schemaName, String tableName)
+    private static record CaseSensitiveSchemaTableName(String schemaName, String tableName)
     {
         /**
          * Convert to {@link SchemaTableName}
@@ -175,10 +175,10 @@ public class StorageMetadata
         }
     }
 
-    private Stream<SchemaTablePair> listTables(ConnectorSession session, SchemaTablePrefix prefix)
+    private Stream<CaseSensitiveSchemaTableName> listTables(ConnectorSession session, SchemaTablePrefix prefix)
     {
         if (prefix.getSchema().isPresent() && prefix.getTable().isPresent()) {
-            return Stream.of(new SchemaTablePair(prefix.getSchema().get(), prefix.getTable().get()));
+            return Stream.of(new CaseSensitiveSchemaTableName(prefix.getSchema().get(), prefix.getTable().get()));
         }
 
         List<String> schemaNames = prefix.getSchema()
@@ -187,7 +187,7 @@ public class StorageMetadata
 
         return schemaNames.stream()
                 .flatMap(schemaName -> storageClient.getTableNames(schemaName).stream()
-                        .map(tableName -> new SchemaTablePair(LIST_SCHEMA_NAME, LIST_SCHEMA_NAME)));
+                        .map(tableName -> new CaseSensitiveSchemaTableName(LIST_SCHEMA_NAME, LIST_SCHEMA_NAME)));
     }
 
     @Override
