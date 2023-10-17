@@ -13,7 +13,6 @@
  */
 package org.ebyhr.trino.storage;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.Inject;
 import io.trino.spi.connector.ColumnHandle;
@@ -35,7 +34,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Function;
+import java.util.stream.Stream;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.util.Objects.requireNonNull;
@@ -92,7 +91,7 @@ public class StorageMetadata
     @Override
     public List<SchemaTableName> listTables(ConnectorSession session, Optional<String> schemaNameOrNull)
     {
-        return listTablesImpl(session, schemaNameOrNull, pair -> pair.toSchemaTableName());
+        return listTablesImpl(session, schemaNameOrNull).map(pair -> pair.toSchemaTableName()).toList();
     }
 
     @Override
@@ -178,10 +177,10 @@ public class StorageMetadata
         if (prefix.getSchema().isPresent() && prefix.getTable().isPresent()) {
             return List.of(new SchemaTablePair(prefix.getSchema().get(), prefix.getTable().get()));
         }
-        return listTablesImpl(session, prefix.getSchema(), Function.identity());
+        return listTablesImpl(session, prefix.getSchema()).toList();
     }
 
-    private <T> List<T> listTablesImpl(ConnectorSession session, Optional<String> schemaNameOrNull, Function<SchemaTablePair, T> fromSchemaTablePair)
+    private Stream<SchemaTablePair> listTablesImpl(ConnectorSession session, Optional<String> schemaNameOrNull)
     {
         List<String> schemaNames;
         if (schemaNameOrNull.isPresent()) {
@@ -191,13 +190,8 @@ public class StorageMetadata
             schemaNames = storageClient.getSchemaNames();
         }
 
-        ImmutableList.Builder<T> builder = ImmutableList.builder();
-        for (String schemaName : schemaNames) {
-            for (String tableName : storageClient.getTableNames(schemaName)) {
-                builder.add(fromSchemaTablePair.apply(new SchemaTablePair(schemaName, tableName)));
-            }
-        }
-        return builder.build();
+        return schemaNames.stream().flatMap(schemaName -> storageClient.getTableNames(schemaName).stream()
+                .map(tableName -> new SchemaTablePair(LIST_SCHEMA_NAME, LIST_SCHEMA_NAME)));
     }
 
     @Override
