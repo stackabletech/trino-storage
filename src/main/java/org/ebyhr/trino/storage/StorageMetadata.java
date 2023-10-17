@@ -13,7 +13,6 @@
  */
 package org.ebyhr.trino.storage;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ColumnMetadata;
@@ -35,6 +34,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
 import static org.ebyhr.trino.storage.ptf.ListTableFunction.COLUMNS_METADATA;
@@ -82,7 +82,7 @@ public class StorageMetadata
     public ConnectorTableMetadata getTableMetadata(ConnectorSession session, ConnectorTableHandle table)
     {
         StorageTableHandle storageTableHandle = (StorageTableHandle) table;
-        SchemaTableName tableName = new SchemaTableName(storageTableHandle.getSchemaName(), storageTableHandle.getTableName());
+        RemoteTableName tableName = new RemoteTableName(storageTableHandle.getSchemaName(), storageTableHandle.getTableName());
 
         return getStorageTableMetadata(session, tableName);
     }
@@ -90,21 +90,10 @@ public class StorageMetadata
     @Override
     public List<SchemaTableName> listTables(ConnectorSession session, Optional<String> schemaNameOrNull)
     {
-        List<String> schemaNames;
-        if (schemaNameOrNull.isPresent()) {
-            schemaNames = List.of(schemaNameOrNull.get());
-        }
-        else {
-            schemaNames = storageClient.getSchemaNames();
-        }
-
-        ImmutableList.Builder<SchemaTableName> builder = ImmutableList.builder();
-        for (String schemaName : schemaNames) {
-            for (String tableName : storageClient.getTableNames(schemaName)) {
-                builder.add(new SchemaTableName(schemaName, tableName));
-            }
-        }
-        return builder.build();
+        SchemaTablePrefix prefix = schemaNameOrNull
+                .map(SchemaTablePrefix::new)
+                .orElseGet(SchemaTablePrefix::new);
+        return listTables(prefix).map(RemoteTableName::toSchemaTableName).collect(toImmutableList());
     }
 
     @Override
@@ -129,11 +118,11 @@ public class StorageMetadata
     {
         requireNonNull(prefix, "prefix is null");
         ImmutableMap.Builder<SchemaTableName, List<ColumnMetadata>> columns = ImmutableMap.builder();
-        for (SchemaTableName tableName : listTables(session, prefix)) {
+        for (RemoteTableName tableName : listTables(prefix).toList()) {
             ConnectorTableMetadata tableMetadata = getStorageTableMetadata(session, tableName);
             // table can disappear during listing operation
             if (tableMetadata != null) {
-                columns.put(tableName, tableMetadata.getColumns());
+                columns.put(tableName.toSchemaTableName(), tableMetadata.getColumns());
             }
         }
         return columns.build();
@@ -143,38 +132,45 @@ public class StorageMetadata
     public Iterator<TableColumnsMetadata> streamTableColumns(ConnectorSession session, SchemaTablePrefix prefix)
     {
         requireNonNull(prefix, "prefix is null");
-        return listTables(session, prefix).stream()
+        return listTables(prefix)
                 .map(table -> TableColumnsMetadata.forTable(
-                        table,
+                        table.toSchemaTableName(),
                         requireNonNull(getStorageTableMetadata(session, table), "tableMetadata is null")
                                 .getColumns()))
                 .iterator();
     }
 
-    private ConnectorTableMetadata getStorageTableMetadata(ConnectorSession session, SchemaTableName tableName)
+    private ConnectorTableMetadata getStorageTableMetadata(ConnectorSession session, RemoteTableName tableName)
     {
-        if (tableName.getSchemaName().equals(LIST_SCHEMA_NAME)) {
-            return new ConnectorTableMetadata(tableName, COLUMNS_METADATA);
+        if (tableName.schemaName().equals(LIST_SCHEMA_NAME)) {
+            return new ConnectorTableMetadata(tableName.toSchemaTableName(), COLUMNS_METADATA);
         }
 
-        if (!listSchemaNames().contains(tableName.getSchemaName())) {
+        if (!listSchemaNames().contains(tableName.schemaName())) {
             return null;
         }
 
-        StorageTable table = storageClient.getTable(session, tableName.getSchemaName(), tableName.getTableName());
+        StorageTable table = storageClient.getTable(session, tableName.schemaName(), tableName.tableName());
         if (table == null) {
             return null;
         }
 
-        return new ConnectorTableMetadata(tableName, table.getColumnsMetadata());
+        return new ConnectorTableMetadata(tableName.toSchemaTableName(), table.getColumnsMetadata());
     }
 
-    private List<SchemaTableName> listTables(ConnectorSession session, SchemaTablePrefix prefix)
+    private Stream<RemoteTableName> listTables(SchemaTablePrefix prefix)
     {
         if (prefix.getSchema().isPresent() && prefix.getTable().isPresent()) {
-            return List.of(new SchemaTableName(prefix.getSchema().get(), prefix.getTable().get()));
+            return Stream.of(new RemoteTableName(prefix.getSchema().get(), prefix.getTable().get()));
         }
-        return listTables(session, prefix.getSchema());
+
+        List<String> schemaNames = prefix.getSchema()
+                .map(List::of)
+                .orElseGet(storageClient::getSchemaNames);
+
+        return schemaNames.stream()
+                .flatMap(schemaName -> storageClient.getTableNames(schemaName).stream()
+                        .map(tableName -> new RemoteTableName(LIST_SCHEMA_NAME, LIST_SCHEMA_NAME)));
     }
 
     @Override
@@ -192,5 +188,16 @@ public class StorageMetadata
 
         ConnectorTableHandle tableHandle = ((QueryFunctionHandle) handle).getTableHandle();
         return Optional.of(new TableFunctionApplicationResult<>(tableHandle, COLUMN_HANDLES));
+    }
+
+    /**
+     * Simplified variant of {@link SchemaTableName} that doesn't case-fold.
+     */
+    private record RemoteTableName(String schemaName, String tableName)
+    {
+        public SchemaTableName toSchemaTableName()
+        {
+            return new SchemaTableName(schemaName(), tableName());
+        }
     }
 }
