@@ -35,6 +35,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.util.Objects.requireNonNull;
@@ -83,7 +84,7 @@ public class StorageMetadata
     public ConnectorTableMetadata getTableMetadata(ConnectorSession session, ConnectorTableHandle table)
     {
         StorageTableHandle storageTableHandle = (StorageTableHandle) table;
-        SchemaTableName tableName = new SchemaTableName(storageTableHandle.getSchemaName(), storageTableHandle.getTableName());
+        SchemaTablePair tableName = new SchemaTablePair(storageTableHandle.getSchemaName(), storageTableHandle.getTableName());
 
         return getStorageTableMetadata(session, tableName);
     }
@@ -91,21 +92,7 @@ public class StorageMetadata
     @Override
     public List<SchemaTableName> listTables(ConnectorSession session, Optional<String> schemaNameOrNull)
     {
-        List<String> schemaNames;
-        if (schemaNameOrNull.isPresent()) {
-            schemaNames = List.of(schemaNameOrNull.get());
-        }
-        else {
-            schemaNames = storageClient.getSchemaNames();
-        }
-
-        ImmutableList.Builder<SchemaTableName> builder = ImmutableList.builder();
-        for (String schemaName : schemaNames) {
-            for (String tableName : storageClient.getTableNames(schemaName)) {
-                builder.add(new SchemaTableName(schemaName, tableName));
-            }
-        }
-        return builder.build();
+        return listTablesImpl(session, schemaNameOrNull, pair -> pair.toSchemaTableName());
     }
 
     @Override
@@ -130,11 +117,11 @@ public class StorageMetadata
     {
         requireNonNull(prefix, "prefix is null");
         ImmutableMap.Builder<SchemaTableName, List<ColumnMetadata>> columns = ImmutableMap.builder();
-        for (SchemaTableName tableName : listTables(session, prefix)) {
+        for (SchemaTablePair tableName : listTables(session, prefix)) {
             ConnectorTableMetadata tableMetadata = getStorageTableMetadata(session, tableName);
             // table can disappear during listing operation
             if (tableMetadata != null) {
-                columns.put(tableName, tableMetadata.getColumns());
+                columns.put(tableName.toSchemaTableName(), tableMetadata.getColumns());
             }
         }
         return columns.build();
@@ -146,16 +133,16 @@ public class StorageMetadata
         requireNonNull(prefix, "prefix is null");
         return listTables(session, prefix).stream()
                 .map(table -> TableColumnsMetadata.forTable(
-                        table,
+                        table.toSchemaTableName(),
                         requireNonNull(getStorageTableMetadata(session, table), "tableMetadata is null")
                                 .getColumns()))
                 .iterator();
     }
 
-    private ConnectorTableMetadata getStorageTableMetadata(ConnectorSession session, SchemaTableName tableName)
+    private ConnectorTableMetadata getStorageTableMetadata(ConnectorSession session, SchemaTablePair tableName)
     {
         if (tableName.getSchemaName().equals(LIST_SCHEMA_NAME)) {
-            return new ConnectorTableMetadata(tableName, COLUMNS_METADATA);
+            return new ConnectorTableMetadata(tableName.toSchemaTableName(), COLUMNS_METADATA);
         }
 
         if (!listSchemaNames().contains(tableName.getSchemaName())) {
@@ -167,15 +154,69 @@ public class StorageMetadata
             return null;
         }
 
-        return new ConnectorTableMetadata(tableName, table.getColumnsMetadata());
+        return new ConnectorTableMetadata(tableName.toSchemaTableName(), table.getColumnsMetadata());
     }
 
-    private List<SchemaTableName> listTables(ConnectorSession session, SchemaTablePrefix prefix)
+    /**
+     * Simplified variant of {@link SchemaTableName} that doesn't case-fold.
+     */
+    private static class SchemaTablePair
+    {
+        private String schemaName;
+        private String tableName;
+
+        public SchemaTablePair(String schemaName, String tableName)
+        {
+            this.schemaName = schemaName;
+            this.tableName = tableName;
+        }
+
+        public String getSchemaName()
+        {
+            return schemaName;
+        }
+
+        public String getTableName()
+        {
+            return tableName;
+        }
+
+        /**
+         * Convert to {@link SchemaTableName}
+         *
+         * NOTE: This will case-fold the schema- and table names, so they may no longer be possible to resolve afterwards.
+         */
+        public SchemaTableName toSchemaTableName()
+        {
+            return new SchemaTableName(schemaName, tableName);
+        }
+    }
+
+    private List<SchemaTablePair> listTables(ConnectorSession session, SchemaTablePrefix prefix)
     {
         if (prefix.getSchema().isPresent() && prefix.getTable().isPresent()) {
-            return List.of(new SchemaTableName(prefix.getSchema().get(), prefix.getTable().get()));
+            return List.of(new SchemaTablePair(prefix.getSchema().get(), prefix.getTable().get()));
         }
-        return listTables(session, prefix.getSchema());
+        return listTablesImpl(session, prefix.getSchema(), Function.identity());
+    }
+
+    private <T> List<T> listTablesImpl(ConnectorSession session, Optional<String> schemaNameOrNull, Function<SchemaTablePair, T> fromSchemaTablePair)
+    {
+        List<String> schemaNames;
+        if (schemaNameOrNull.isPresent()) {
+            schemaNames = List.of(schemaNameOrNull.get());
+        }
+        else {
+            schemaNames = storageClient.getSchemaNames();
+        }
+
+        ImmutableList.Builder<T> builder = ImmutableList.builder();
+        for (String schemaName : schemaNames) {
+            for (String tableName : storageClient.getTableNames(schemaName)) {
+                builder.add(fromSchemaTablePair.apply(new SchemaTablePair(schemaName, tableName)));
+            }
+        }
+        return builder.build();
     }
 
     @Override
