@@ -28,6 +28,8 @@ public final class PluginFactory
                 return new CsvPlugin();
             case "tsv":
                 return new TsvPlugin();
+            case "ssv":
+                return new SsvPlugin();
             case "txt":
                 return new TextPlugin();
             case "raw":
