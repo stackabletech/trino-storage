@@ -46,6 +46,14 @@ public final class TestStorageConnector
     }
 
     @Test
+    public void testSelectSsv()
+    {
+        assertQuery(
+                format("SELECT * FROM storage.ssv.\"%s\"", toAbsolutePath("example-data/numbers-2.ssv")),
+                "VALUES ('eleven', '11'), ('twelve', '12')");
+    }
+
+    @Test
     public void testSelectTsv()
     {
         assertQuery(

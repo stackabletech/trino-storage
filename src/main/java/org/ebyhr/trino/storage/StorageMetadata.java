@@ -93,7 +93,7 @@ public class StorageMetadata
         SchemaTablePrefix prefix = schemaNameOrNull
                 .map(SchemaTablePrefix::new)
                 .orElseGet(SchemaTablePrefix::new);
-        return listTables(prefix).map(RemoteTableName::toSchemaTableName).collect(toImmutableList());
+        return listTables(prefix).map(RemoteTableName::toSchemaTableName).toList();
     }
 
     @Override

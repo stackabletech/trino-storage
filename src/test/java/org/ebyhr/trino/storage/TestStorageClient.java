@@ -39,6 +39,6 @@ public class TestStorageClient
         TrinoFileSystemFactory fileSystemFactory = new HdfsFileSystemFactory(hdfsEnvironment);
 
         StorageClient client = new StorageClient(fileSystemFactory);
-        assertEquals(client.getSchemaNames(), List.of("csv", "tsv", "txt", "raw", "excel", "orc", "json"));
+        assertEquals(client.getSchemaNames(), List.of("csv", "ssv", "tsv", "txt", "raw", "excel", "orc", "json"));
     }
 }
