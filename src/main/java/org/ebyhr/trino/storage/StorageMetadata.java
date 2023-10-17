@@ -91,7 +91,10 @@ public class StorageMetadata
     @Override
     public List<SchemaTableName> listTables(ConnectorSession session, Optional<String> schemaNameOrNull)
     {
-        return listTablesImpl(session, schemaNameOrNull).map(pair -> pair.toSchemaTableName()).toList();
+        SchemaTablePrefix prefix = schemaNameOrNull
+                .map(SchemaTablePrefix::new)
+                .orElseGet(SchemaTablePrefix::new);
+        return listTables(session, prefix).map(pair -> pair.toSchemaTableName()).collect(toImmutableList());
     }
 
     @Override
@@ -116,7 +119,7 @@ public class StorageMetadata
     {
         requireNonNull(prefix, "prefix is null");
         ImmutableMap.Builder<SchemaTableName, List<ColumnMetadata>> columns = ImmutableMap.builder();
-        for (SchemaTablePair tableName : listTables(session, prefix)) {
+        for (SchemaTablePair tableName : listTables(session, prefix).toList()) {
             ConnectorTableMetadata tableMetadata = getStorageTableMetadata(session, tableName);
             // table can disappear during listing operation
             if (tableMetadata != null) {
@@ -130,7 +133,7 @@ public class StorageMetadata
     public Iterator<TableColumnsMetadata> streamTableColumns(ConnectorSession session, SchemaTablePrefix prefix)
     {
         requireNonNull(prefix, "prefix is null");
-        return listTables(session, prefix).stream()
+        return listTables(session, prefix)
                 .map(table -> TableColumnsMetadata.forTable(
                         table.toSchemaTableName(),
                         requireNonNull(getStorageTableMetadata(session, table), "tableMetadata is null")
@@ -172,26 +175,19 @@ public class StorageMetadata
         }
     }
 
-    private List<SchemaTablePair> listTables(ConnectorSession session, SchemaTablePrefix prefix)
+    private Stream<SchemaTablePair> listTables(ConnectorSession session, SchemaTablePrefix prefix)
     {
         if (prefix.getSchema().isPresent() && prefix.getTable().isPresent()) {
-            return List.of(new SchemaTablePair(prefix.getSchema().get(), prefix.getTable().get()));
-        }
-        return listTablesImpl(session, prefix.getSchema()).toList();
-    }
-
-    private Stream<SchemaTablePair> listTablesImpl(ConnectorSession session, Optional<String> schemaNameOrNull)
-    {
-        List<String> schemaNames;
-        if (schemaNameOrNull.isPresent()) {
-            schemaNames = List.of(schemaNameOrNull.get());
-        }
-        else {
-            schemaNames = storageClient.getSchemaNames();
+            return Stream.of(new SchemaTablePair(prefix.getSchema().get(), prefix.getTable().get()));
         }
 
-        return schemaNames.stream().flatMap(schemaName -> storageClient.getTableNames(schemaName).stream()
-                .map(tableName -> new SchemaTablePair(LIST_SCHEMA_NAME, LIST_SCHEMA_NAME)));
+        List<String> schemaNames = prefix.getSchema()
+                .map(List::of)
+                .orElseGet(storageClient::getSchemaNames);
+
+        return schemaNames.stream()
+                .flatMap(schemaName -> storageClient.getTableNames(schemaName).stream()
+                        .map(tableName -> new SchemaTablePair(LIST_SCHEMA_NAME, LIST_SCHEMA_NAME)));
     }
 
     @Override
