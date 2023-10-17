@@ -141,15 +141,15 @@ public class StorageMetadata
 
     private ConnectorTableMetadata getStorageTableMetadata(ConnectorSession session, SchemaTablePair tableName)
     {
-        if (tableName.getSchemaName().equals(LIST_SCHEMA_NAME)) {
+        if (tableName.schemaName().equals(LIST_SCHEMA_NAME)) {
             return new ConnectorTableMetadata(tableName.toSchemaTableName(), COLUMNS_METADATA);
         }
 
-        if (!listSchemaNames().contains(tableName.getSchemaName())) {
+        if (!listSchemaNames().contains(tableName.schemaName())) {
             return null;
         }
 
-        StorageTable table = storageClient.getTable(session, tableName.getSchemaName(), tableName.getTableName());
+        StorageTable table = storageClient.getTable(session, tableName.schemaName(), tableName.tableName());
         if (table == null) {
             return null;
         }
@@ -160,27 +160,8 @@ public class StorageMetadata
     /**
      * Simplified variant of {@link SchemaTableName} that doesn't case-fold.
      */
-    private static class SchemaTablePair
+    private static record SchemaTablePair(String schemaName, String tableName)
     {
-        private String schemaName;
-        private String tableName;
-
-        public SchemaTablePair(String schemaName, String tableName)
-        {
-            this.schemaName = schemaName;
-            this.tableName = tableName;
-        }
-
-        public String getSchemaName()
-        {
-            return schemaName;
-        }
-
-        public String getTableName()
-        {
-            return tableName;
-        }
-
         /**
          * Convert to {@link SchemaTableName}
          *
@@ -188,7 +169,7 @@ public class StorageMetadata
          */
         public SchemaTableName toSchemaTableName()
         {
-            return new SchemaTableName(schemaName, tableName);
+            return new SchemaTableName(schemaName(), tableName());
         }
     }
 
