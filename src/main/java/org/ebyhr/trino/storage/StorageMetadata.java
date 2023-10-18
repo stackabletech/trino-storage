@@ -201,11 +201,6 @@ public class StorageMetadata
      */
     private record RemoteTableName(String schemaName, String tableName)
     {
-        /**
-         * Convert to {@link SchemaTableName}
-         *
-         * NOTE: This will case-fold the schema- and table names, so they may no longer be possible to resolve afterwards.
-         */
         public SchemaTableName toSchemaTableName()
         {
             return new SchemaTableName(schemaName(), tableName());
