@@ -94,7 +94,7 @@ public class StorageMetadata
         SchemaTablePrefix prefix = schemaNameOrNull
                 .map(SchemaTablePrefix::new)
                 .orElseGet(SchemaTablePrefix::new);
-        return listTables(session, prefix).map(RemoteTableName::toSchemaTableName).collect(toImmutableList());
+        return listTables(prefix).map(RemoteTableName::toSchemaTableName).collect(toImmutableList());
     }
 
     @Override
@@ -119,7 +119,7 @@ public class StorageMetadata
     {
         requireNonNull(prefix, "prefix is null");
         ImmutableMap.Builder<SchemaTableName, List<ColumnMetadata>> columns = ImmutableMap.builder();
-        for (RemoteTableName tableName : listTables(session, prefix).toList()) {
+        for (RemoteTableName tableName : listTables(prefix).toList()) {
             ConnectorTableMetadata tableMetadata = getStorageTableMetadata(session, tableName);
             // table can disappear during listing operation
             if (tableMetadata != null) {
@@ -133,7 +133,7 @@ public class StorageMetadata
     public Iterator<TableColumnsMetadata> streamTableColumns(ConnectorSession session, SchemaTablePrefix prefix)
     {
         requireNonNull(prefix, "prefix is null");
-        return listTables(session, prefix)
+        return listTables(prefix)
                 .map(table -> TableColumnsMetadata.forTable(
                         table.toSchemaTableName(),
                         requireNonNull(getStorageTableMetadata(session, table), "tableMetadata is null")
@@ -159,7 +159,7 @@ public class StorageMetadata
         return new ConnectorTableMetadata(tableName.toSchemaTableName(), table.getColumnsMetadata());
     }
 
-    private Stream<RemoteTableName> listTables(ConnectorSession session, SchemaTablePrefix prefix)
+    private Stream<RemoteTableName> listTables(SchemaTablePrefix prefix)
     {
         if (prefix.getSchema().isPresent() && prefix.getTable().isPresent()) {
             return Stream.of(new RemoteTableName(prefix.getSchema().get(), prefix.getTable().get()));
